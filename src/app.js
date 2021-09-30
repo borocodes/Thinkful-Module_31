@@ -13,7 +13,7 @@ app.use("/counts/:countId", (req, res, next) => {
   const foundCount = counts[countId];
 
   if (foundCount === undefined) {
-    next(`Count id not found: ${countId}`);
+    next({ status: 404, message: `Count id not found: ${countId}` });
   } else {
     res.json({ data: foundCount }); // Return a JSON object, not a number.
   }
@@ -30,7 +30,7 @@ app.use("/flips/:flipId", (req, res, next) => {
   if (foundFlip) {
     res.json({ data: foundFlip });
   } else {
-    next(`Flip id not found: ${flipId}`);
+    next({ status: 404, message: `Flip id not found: ${flipId}` });
   }
 });
 
@@ -38,24 +38,31 @@ app.get("/flips", (req, res) => {
   res.json({ data: flips });
 });
 
-// Variable to hold the next ID
-// Because some IDs may already be used, find the largest assigned ID
-let lastFlipId = flips.reduce((maxId, flip) => Math.max(maxId, flip.id), 0);
-
-app.post("/flips", (req, res, next) => {
+// New middleware function to validate the request body
+function bodyHasResultProperty(req, res, next) {
   const { data: { result } = {} } = req.body;
   if (result) {
+    return next(); // Call `next()` without an error message if the result exists
+  }
+  next("A 'result' property is required.");
+}
+
+let lastFlipId = flips.reduce((maxId, flip) => Math.max(maxId, flip.id), 0);
+
+app.post(
+  "/flips",
+  bodyHasResultProperty, // Add validation middleware function
+  (req, res) => {
+    // Route handler no longer has validation code.
+    const { data: { result } = {} } = req.body;
     const newFlip = {
       id: ++lastFlipId, // Increment last ID, then assign as the current ID
-      result,
+      result: result,
     };
     flips.push(newFlip);
-    counts[result] = counts[result] + 1; // Increment the counts
     res.status(201).json({ data: newFlip });
-  } else {
-    res.sendStatus(400);
   }
-});
+);
 
 // Not found handler
 app.use((request, response, next) => {
@@ -63,9 +70,10 @@ app.use((request, response, next) => {
 });
 
 // Error handler
-app.use((error, request, response, next) => {
+app.use((error, req, res, next) => {
   console.error(error);
-  response.send(error);
+  const { status = 500, message = "Something went wrong!" } = error;
+  res.status(status).json({ error: message });
 });
 
 module.exports = app;
